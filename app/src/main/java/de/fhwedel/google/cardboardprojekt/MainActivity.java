@@ -17,6 +17,12 @@ public class MainActivity extends CardboardActivity implements CardboardView.Ste
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        // Associate a CardboardView.StereoRenderer with cardboardView.
+        CardboardView cardboardView = (CardboardView) findViewById(R.id.cardboard_view);
+        cardboardView.setRenderer(this);
+        // Associate the cardboardView with this activity.
+        setCardboardView(cardboardView);
     }
 
     @Override
