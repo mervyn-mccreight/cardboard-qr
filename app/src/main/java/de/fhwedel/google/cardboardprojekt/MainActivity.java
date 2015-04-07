@@ -2,17 +2,15 @@ package de.fhwedel.google.cardboardprojekt;
 
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
-import android.hardware.camera2.CameraCaptureSession;
-import android.hardware.camera2.CameraDevice;
+import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
-import android.hardware.camera2.CaptureRequest;
-import android.hardware.camera2.TotalCaptureResult;
+import android.hardware.camera2.params.StreamConfigurationMap;
 import android.opengl.GLES20;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Log;
-import android.view.Surface;
+import android.util.Size;
 
 import com.google.vrtoolkit.cardboard.CardboardActivity;
 import com.google.vrtoolkit.cardboard.CardboardView;
@@ -24,14 +22,15 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.nio.ShortBuffer;
-import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 import javax.microedition.khronos.egl.EGLConfig;
 
 import de.fhwedel.google.cardboardprojekt.gl.ShaderCodeLoader;
-
-import static android.hardware.camera2.CameraCaptureSession.CaptureCallback;
-import static android.hardware.camera2.CameraDevice.TEMPLATE_PREVIEW;
 
 
 public class MainActivity extends CardboardActivity implements CardboardView.StereoRenderer {
@@ -56,14 +55,15 @@ public class MainActivity extends CardboardActivity implements CardboardView.Ste
 
     private static final int GL_TEXTURE_EXTERNAL_OES = 0x8D65;
 
-    private CardboardView cardboardView;
     private FloatBuffer vertexBuffer;
     private FloatBuffer textureVerticesBuffer;
     private SurfaceTexture surface;
     private int program;
     private int texture;
     private ShortBuffer drawListBuffer;
-
+    private Handler cameraHandler;
+    private CameraStateCallback cameraStateCallback;
+    private Semaphore cameraOpenCloseLock = new Semaphore(1);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -71,7 +71,7 @@ public class MainActivity extends CardboardActivity implements CardboardView.Ste
         setContentView(R.layout.activity_main);
 
         // Associate a CardboardView.StereoRenderer with cardboardView.
-        cardboardView = (CardboardView) findViewById(R.id.cardboard_view);
+        CardboardView cardboardView = (CardboardView) findViewById(R.id.cardboard_view);
         cardboardView.setRenderer(this);
         // Associate the cardboardView with this activity.
         setCardboardView(cardboardView);
@@ -79,7 +79,6 @@ public class MainActivity extends CardboardActivity implements CardboardView.Ste
 
     @Override
     public void onNewFrame(HeadTransform headTransform) {
-        //todo: why?
         surface.updateTexImage();
     }
 
@@ -206,82 +205,57 @@ public class MainActivity extends CardboardActivity implements CardboardView.Ste
         return texture[0];
     }
 
-    public void startCamera(int texture) throws CameraAccessException {
-
+    public void startCamera(final int texture) throws CameraAccessException {
         surface = new SurfaceTexture(texture);
 
         CameraManager cameraManager = (CameraManager) getApplicationContext().getSystemService(CAMERA_SERVICE);
-        cameraManager.openCamera(cameraManager.getCameraIdList()[0], new CameraDevice.StateCallback() {
+        String backFacingCameraId = getBackFacingCameraId(cameraManager);
+        setSurfaceTextureSize(cameraManager, backFacingCameraId, surface);
 
-            private Surface outputTarget;
+        cameraHandler = startBackgroundThread();
+        cameraStateCallback = new CameraStateCallback(surface, cameraOpenCloseLock);
 
-            @Override
-            public void onOpened(CameraDevice camera) {
-                CaptureRequest.Builder request;
-                try {
-                    request = camera.createCaptureRequest(TEMPLATE_PREVIEW);
-                } catch (CameraAccessException e) {
-                    throw new RuntimeException(e);
-                }
-
-                outputTarget = new Surface(surface);
-
-                request.addTarget(outputTarget);
-
-                ArrayList<Surface> surfaces = new ArrayList<>();
-                surfaces.add(outputTarget);
-                final CaptureRequest build = request.build();
-
-                try {
-                    camera.createCaptureSession(surfaces, new CameraCaptureSession.StateCallback() {
-                        @Override
-                        public void onConfigured(CameraCaptureSession session) {
-                            try {
-                                session.setRepeatingRequest(build, new CaptureCallback() {
-                                            @Override
-                                            public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
-                                                cardboardView.requestRender();
-                                                super.onCaptureCompleted(session, request, result);
-                                            }
-                                        },
-                                        null);
-                            } catch (CameraAccessException e) {
-                                throw new RuntimeException(e);
-                            }
-                        }
-
-                        @Override
-                        public void onConfigureFailed(CameraCaptureSession session) {
-
-                        }
-                    }, null);
-                } catch (CameraAccessException e) {
-                    throw new RuntimeException(e);
-                }
+        try {
+            if (!cameraOpenCloseLock.tryAcquire(2500, TimeUnit.MILLISECONDS)) {
+                throw new RuntimeException("Lock timed out");
             }
+            cameraManager.openCamera(backFacingCameraId, cameraStateCallback, cameraHandler);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
+    private void setSurfaceTextureSize(CameraManager cameraManager, String backFacingCameraId, SurfaceTexture surfaceTexture) throws CameraAccessException {
+        CameraCharacteristics cameraCharacteristics = cameraManager.getCameraCharacteristics(backFacingCameraId);
+        StreamConfigurationMap streamConfigurationMap = cameraCharacteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+        Size maxSize = getMaxSize(streamConfigurationMap.getOutputSizes(SurfaceTexture.class));
+        surfaceTexture.setDefaultBufferSize(maxSize.getWidth(), maxSize.getHeight());
+    }
+
+    private Size getMaxSize(Size[] sizes) {
+        return Collections.max(Arrays.asList(sizes), new Comparator<Size>() {
             @Override
-            public void onDisconnected(CameraDevice camera) {
+            public int compare(Size lhs, Size rhs) {
+                int leftArea = lhs.getHeight() * lhs.getWidth();
+                int rightArea = rhs.getWidth() * rhs.getHeight();
+
+                return leftArea - rightArea;
             }
+        });
+    }
 
-            @Override
-            public void onError(CameraDevice camera, int error) {
+    private String getBackFacingCameraId(CameraManager cameraManager) throws CameraAccessException {
+        String[] cameraIdList = cameraManager.getCameraIdList();
+
+        for (String cameraId : cameraIdList) {
+            CameraCharacteristics cameraCharacteristics = cameraManager.getCameraCharacteristics(cameraId);
+            if (cameraCharacteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK) {
+                return cameraId;
             }
-        }, startBackgroundThread());
+        }
 
-
-//        surface.setOnFrameAvailableListener(this);
-
-//        //todo: use new camera2 package stuff.
-//        Camera camera = Camera.open();
-//
-//        try {
-//            camera.setPreviewTexture(surface);
-//            camera.startPreview();
-//        } catch (IOException ioe) {
-//            Log.e("startCamera", "Camera launch failed.");
-//            throw new RuntimeException("Camera launch failed.");
-//        }
+        Log.e("getBackFacingCameraId", "No back-facing camera found.");
+        throw new IllegalStateException("No back-facing camera found.");
     }
 
     /**
@@ -303,6 +277,23 @@ public class MainActivity extends CardboardActivity implements CardboardView.Ste
             thread.join();
         } catch (InterruptedException e) {
             e.printStackTrace();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        try {
+            cameraOpenCloseLock.acquire();
+
+            if (cameraStateCallback != null) {
+                cameraStateCallback.close();
+                stopBackgroundThread(cameraHandler);
+            }
+        } catch (InterruptedException e) {
+            throw new RuntimeException("Interrupted while trying to lock camera closing.", e);
+        } finally {
+            cameraOpenCloseLock.release();
+            super.onPause();
         }
     }
 }
