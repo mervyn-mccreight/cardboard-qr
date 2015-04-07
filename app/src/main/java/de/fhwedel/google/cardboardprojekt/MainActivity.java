@@ -1,10 +1,18 @@
 package de.fhwedel.google.cardboardprojekt;
 
 import android.graphics.SurfaceTexture;
-import android.hardware.Camera;
+import android.hardware.camera2.CameraAccessException;
+import android.hardware.camera2.CameraCaptureSession;
+import android.hardware.camera2.CameraDevice;
+import android.hardware.camera2.CameraManager;
+import android.hardware.camera2.CaptureRequest;
+import android.hardware.camera2.TotalCaptureResult;
 import android.opengl.GLES20;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.HandlerThread;
 import android.util.Log;
+import android.view.Surface;
 
 import com.google.vrtoolkit.cardboard.CardboardActivity;
 import com.google.vrtoolkit.cardboard.CardboardView;
@@ -12,18 +20,21 @@ import com.google.vrtoolkit.cardboard.Eye;
 import com.google.vrtoolkit.cardboard.HeadTransform;
 import com.google.vrtoolkit.cardboard.Viewport;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.nio.ShortBuffer;
+import java.util.ArrayList;
 
 import javax.microedition.khronos.egl.EGLConfig;
 
 import de.fhwedel.google.cardboardprojekt.gl.ShaderCodeLoader;
 
+import static android.hardware.camera2.CameraCaptureSession.CaptureCallback;
+import static android.hardware.camera2.CameraDevice.TEMPLATE_PREVIEW;
 
-public class MainActivity extends CardboardActivity implements CardboardView.StereoRenderer, SurfaceTexture.OnFrameAvailableListener {
+
+public class MainActivity extends CardboardActivity implements CardboardView.StereoRenderer {
 
     // number of coordinates per vertex in this array
     private static final int COORDS_PER_VERTEX = 2;
@@ -52,7 +63,6 @@ public class MainActivity extends CardboardActivity implements CardboardView.Ste
     private int program;
     private int texture;
     private ShortBuffer drawListBuffer;
-
 
 
     @Override
@@ -151,7 +161,12 @@ public class MainActivity extends CardboardActivity implements CardboardView.Ste
         drawListBuffer.position(0);
 
         texture = createTexture();
-        startCamera(texture);
+
+        try {
+            startCamera(texture);
+        } catch (CameraAccessException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
@@ -191,24 +206,103 @@ public class MainActivity extends CardboardActivity implements CardboardView.Ste
         return texture[0];
     }
 
-    public void startCamera(int texture) {
+    public void startCamera(int texture) throws CameraAccessException {
+
         surface = new SurfaceTexture(texture);
-        surface.setOnFrameAvailableListener(this);
 
-        //todo: use new camera2 package stuff.
-        Camera camera = Camera.open();
+        CameraManager cameraManager = (CameraManager) getApplicationContext().getSystemService(CAMERA_SERVICE);
+        cameraManager.openCamera(cameraManager.getCameraIdList()[0], new CameraDevice.StateCallback() {
 
-        try {
-            camera.setPreviewTexture(surface);
-            camera.startPreview();
-        } catch (IOException ioe) {
-            Log.e("startCamera", "Camera launch failed.");
-            throw new RuntimeException("Camera launch failed.");
-        }
+            private Surface outputTarget;
+
+            @Override
+            public void onOpened(CameraDevice camera) {
+                CaptureRequest.Builder request;
+                try {
+                    request = camera.createCaptureRequest(TEMPLATE_PREVIEW);
+                } catch (CameraAccessException e) {
+                    throw new RuntimeException(e);
+                }
+
+                outputTarget = new Surface(surface);
+
+                request.addTarget(outputTarget);
+
+                ArrayList<Surface> surfaces = new ArrayList<>();
+                surfaces.add(outputTarget);
+                final CaptureRequest build = request.build();
+
+                try {
+                    camera.createCaptureSession(surfaces, new CameraCaptureSession.StateCallback() {
+                        @Override
+                        public void onConfigured(CameraCaptureSession session) {
+                            try {
+                                session.setRepeatingRequest(build, new CaptureCallback() {
+                                            @Override
+                                            public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
+                                                cardboardView.requestRender();
+                                                super.onCaptureCompleted(session, request, result);
+                                            }
+                                        },
+                                        null);
+                            } catch (CameraAccessException e) {
+                                throw new RuntimeException(e);
+                            }
+                        }
+
+                        @Override
+                        public void onConfigureFailed(CameraCaptureSession session) {
+
+                        }
+                    }, null);
+                } catch (CameraAccessException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+
+            @Override
+            public void onDisconnected(CameraDevice camera) {
+            }
+
+            @Override
+            public void onError(CameraDevice camera, int error) {
+            }
+        }, startBackgroundThread());
+
+
+//        surface.setOnFrameAvailableListener(this);
+
+//        //todo: use new camera2 package stuff.
+//        Camera camera = Camera.open();
+//
+//        try {
+//            camera.setPreviewTexture(surface);
+//            camera.startPreview();
+//        } catch (IOException ioe) {
+//            Log.e("startCamera", "Camera launch failed.");
+//            throw new RuntimeException("Camera launch failed.");
+//        }
     }
 
-    @Override
-    public void onFrameAvailable(SurfaceTexture surfaceTexture) {
-        cardboardView.requestRender();
+    /**
+     * Starts a background thread and its {@link Handler}.
+     */
+    private Handler startBackgroundThread() {
+        HandlerThread cameraBackground = new HandlerThread("CameraBackground");
+        cameraBackground.start();
+        return new Handler(cameraBackground.getLooper());
+    }
+
+    /**
+     * Stops the background thread and its {@link Handler}.
+     */
+    private void stopBackgroundThread(Handler handler) {
+        HandlerThread thread = (HandlerThread) handler.getLooper().getThread();
+        thread.quitSafely();
+        try {
+            thread.join();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 }
