@@ -43,6 +43,7 @@ public class CameraStateCallback extends CameraDevice.StateCallback {
         return builder.build();
     }
 
+    //todo: apparently does not work.
     public void close() {
         if (session.isPresent()) {
             try {
