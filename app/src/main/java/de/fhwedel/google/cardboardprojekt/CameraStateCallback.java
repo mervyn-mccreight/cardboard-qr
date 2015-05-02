@@ -8,6 +8,7 @@ import android.hardware.camera2.CaptureFailure;
 import android.hardware.camera2.CaptureRequest;
 import android.hardware.camera2.CaptureResult;
 import android.hardware.camera2.TotalCaptureResult;
+import android.media.ImageReader;
 import android.util.Log;
 import android.view.Surface;
 
@@ -22,12 +23,14 @@ import static android.hardware.camera2.CameraDevice.TEMPLATE_RECORD;
 public class CameraStateCallback extends CameraDevice.StateCallback {
 
     private SurfaceTexture texture;
+    private final ImageReader imageReader;
 
     private Optional<CameraDevice> device = Optional.absent();
     private Optional<CameraCaptureSession> session = Optional.absent();
 
-    public CameraStateCallback(SurfaceTexture texture) {
+    public CameraStateCallback(SurfaceTexture texture, ImageReader imageReader) {
         this.texture = texture;
+        this.imageReader = imageReader;
     }
 
     private CaptureRequest createCaptureRequest(CameraDevice device, List<Surface> targets) throws CameraAccessException {
@@ -61,7 +64,7 @@ public class CameraStateCallback extends CameraDevice.StateCallback {
     @Override
     public void onOpened(CameraDevice camera) {
         try {
-            final List<Surface> targets = Lists.newArrayList(new Surface(texture));
+            final List<Surface> targets = Lists.newArrayList(new Surface(texture), imageReader.getSurface());
 
             device = Optional.of(camera);
 
@@ -110,7 +113,6 @@ public class CameraStateCallback extends CameraDevice.StateCallback {
     }
 
     private class Foo extends CaptureCallback {
-
         @Override
         public void onCaptureStarted(CameraCaptureSession session, CaptureRequest request, long timestamp, long frameNumber) {
             Log.d("Foo", "onCaptureStarted");

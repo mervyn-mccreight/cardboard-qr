@@ -1,10 +1,13 @@
 package de.fhwedel.google.cardboardprojekt;
 
+import android.graphics.ImageFormat;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.params.StreamConfigurationMap;
+import android.media.Image;
+import android.media.ImageReader;
 import android.opengl.GLES20;
 import android.os.Bundle;
 import android.os.Handler;
@@ -31,7 +34,9 @@ import javax.microedition.khronos.egl.EGLConfig;
 import de.fhwedel.google.cardboardprojekt.gl.ShaderCodeLoader;
 
 
-public class MainActivity extends CardboardActivity implements CardboardView.StereoRenderer {
+public class MainActivity extends CardboardActivity implements CardboardView.StereoRenderer, ImageReader.OnImageAvailableListener {
+
+    private long id = 0;
 
     // number of coordinates per vertex in this array
     private static final int COORDS_PER_VERTEX = 2;
@@ -209,17 +214,28 @@ public class MainActivity extends CardboardActivity implements CardboardView.Ste
         String backFacingCameraId = getBackFacingCameraId(cameraManager);
         setSurfaceTextureSize(cameraManager, backFacingCameraId, surface);
 
+        StreamConfigurationMap streamConfigurationMap = getStreamConfigurationMap(cameraManager, backFacingCameraId);
+        Size[] outputSizes = streamConfigurationMap.getOutputSizes(ImageFormat.YUV_420_888);
+
+        //todo: very nexus 5 specific :D - 6 --> 1280 x 9xx (?)
+        ImageReader imageReader = ImageReader.newInstance(outputSizes[6].getWidth(), outputSizes[6].getHeight(), ImageFormat.YUV_420_888, 5);
+        imageReader.setOnImageAvailableListener(this, startBackgroundThread());
+
         cameraHandler = startBackgroundThread();
-        cameraStateCallback = new CameraStateCallback(surface);
+        cameraStateCallback = new CameraStateCallback(surface, imageReader);
 
         cameraManager.openCamera(backFacingCameraId, cameraStateCallback, cameraHandler);
     }
 
     private void setSurfaceTextureSize(CameraManager cameraManager, String backFacingCameraId, SurfaceTexture surfaceTexture) throws CameraAccessException {
-        CameraCharacteristics cameraCharacteristics = cameraManager.getCameraCharacteristics(backFacingCameraId);
-        StreamConfigurationMap streamConfigurationMap = cameraCharacteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+        StreamConfigurationMap streamConfigurationMap = getStreamConfigurationMap(cameraManager, backFacingCameraId);
         Size maxSize = getMaxSize(streamConfigurationMap.getOutputSizes(SurfaceTexture.class));
         surfaceTexture.setDefaultBufferSize(maxSize.getWidth(), maxSize.getHeight());
+    }
+
+    private StreamConfigurationMap getStreamConfigurationMap(CameraManager cameraManager, String backFacingCameraId) throws CameraAccessException {
+        CameraCharacteristics cameraCharacteristics = cameraManager.getCameraCharacteristics(backFacingCameraId);
+        return cameraCharacteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
     }
 
     private Size getMaxSize(Size[] sizes) {
@@ -252,9 +268,9 @@ public class MainActivity extends CardboardActivity implements CardboardView.Ste
      * Starts a background thread and its {@link Handler}.
      */
     private Handler startBackgroundThread() {
-        HandlerThread cameraBackground = new HandlerThread("CameraBackground");
-        cameraBackground.start();
-        return new Handler(cameraBackground.getLooper());
+        HandlerThread thread = new HandlerThread(String.valueOf(id++));
+        thread.start();
+        return new Handler(thread.getLooper());
     }
 
     /**
@@ -277,5 +293,11 @@ public class MainActivity extends CardboardActivity implements CardboardView.Ste
             stopBackgroundThread(cameraHandler);
         }
         super.onPause();
+    }
+
+    @Override
+    public void onImageAvailable(ImageReader reader) {
+        Image image = reader.acquireLatestImage();
+        image.close();
     }
 }
