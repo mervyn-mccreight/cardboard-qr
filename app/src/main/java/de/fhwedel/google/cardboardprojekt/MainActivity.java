@@ -297,6 +297,9 @@ public class MainActivity extends CardboardActivity implements CardboardView.Ste
 
     @Override
     public void onImageAvailable(ImageReader reader) {
+        //todo: create PlanarYUVLuminanceSource from Image.
+        //todo: to do this, get byte[] from image (google this shit).
+        //todo: then use QRCodeMultiReader to decode the image.
         Image image = reader.acquireLatestImage();
         image.close();
     }
