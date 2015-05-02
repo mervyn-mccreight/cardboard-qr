@@ -25,8 +25,6 @@ import java.nio.ShortBuffer;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
 
 import javax.microedition.khronos.egl.EGLConfig;
 
@@ -63,7 +61,6 @@ public class MainActivity extends CardboardActivity implements CardboardView.Ste
     private ShortBuffer drawListBuffer;
     private Handler cameraHandler;
     private CameraStateCallback cameraStateCallback;
-    private Semaphore cameraOpenCloseLock = new Semaphore(1);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -213,16 +210,9 @@ public class MainActivity extends CardboardActivity implements CardboardView.Ste
         setSurfaceTextureSize(cameraManager, backFacingCameraId, surface);
 
         cameraHandler = startBackgroundThread();
-        cameraStateCallback = new CameraStateCallback(surface, cameraOpenCloseLock);
+        cameraStateCallback = new CameraStateCallback(surface);
 
-        try {
-            if (!cameraOpenCloseLock.tryAcquire(2500, TimeUnit.MILLISECONDS)) {
-                throw new RuntimeException("Lock timed out");
-            }
-            cameraManager.openCamera(backFacingCameraId, cameraStateCallback, cameraHandler);
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
+        cameraManager.openCamera(backFacingCameraId, cameraStateCallback, cameraHandler);
     }
 
     private void setSurfaceTextureSize(CameraManager cameraManager, String backFacingCameraId, SurfaceTexture surfaceTexture) throws CameraAccessException {
@@ -282,18 +272,10 @@ public class MainActivity extends CardboardActivity implements CardboardView.Ste
 
     @Override
     protected void onPause() {
-        try {
-            cameraOpenCloseLock.acquire();
-
-            if (cameraStateCallback != null) {
-                cameraStateCallback.close();
-                stopBackgroundThread(cameraHandler);
-            }
-        } catch (InterruptedException e) {
-            throw new RuntimeException("Interrupted while trying to lock camera closing.", e);
-        } finally {
-            cameraOpenCloseLock.release();
-            super.onPause();
+        if (cameraStateCallback != null) {
+            cameraStateCallback.close();
+            stopBackgroundThread(cameraHandler);
         }
+        super.onPause();
     }
 }

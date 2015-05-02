@@ -15,7 +15,6 @@ import com.google.common.base.Optional;
 import com.google.common.collect.Lists;
 
 import java.util.List;
-import java.util.concurrent.Semaphore;
 
 import static android.hardware.camera2.CameraCaptureSession.CaptureCallback;
 import static android.hardware.camera2.CameraDevice.TEMPLATE_RECORD;
@@ -23,14 +22,12 @@ import static android.hardware.camera2.CameraDevice.TEMPLATE_RECORD;
 public class CameraStateCallback extends CameraDevice.StateCallback {
 
     private SurfaceTexture texture;
-    private final Semaphore cameraOpenCloseLock;
 
     private Optional<CameraDevice> device = Optional.absent();
     private Optional<CameraCaptureSession> session = Optional.absent();
 
-    public CameraStateCallback(SurfaceTexture texture, Semaphore cameraOpenCloseLock) {
+    public CameraStateCallback(SurfaceTexture texture) {
         this.texture = texture;
-        this.cameraOpenCloseLock = cameraOpenCloseLock;
     }
 
     private CaptureRequest createCaptureRequest(CameraDevice device, List<Surface> targets) throws CameraAccessException {
@@ -63,7 +60,6 @@ public class CameraStateCallback extends CameraDevice.StateCallback {
 
     @Override
     public void onOpened(CameraDevice camera) {
-        cameraOpenCloseLock.release();
         try {
             final List<Surface> targets = Lists.newArrayList(new Surface(texture));
 
@@ -101,7 +97,6 @@ public class CameraStateCallback extends CameraDevice.StateCallback {
 
     @Override
     public void onDisconnected(CameraDevice camera) {
-        cameraOpenCloseLock.release();
         Log.d("CameraStateCallback", "onDisconnected.");
         device = Optional.absent();
         camera.close();
@@ -109,7 +104,6 @@ public class CameraStateCallback extends CameraDevice.StateCallback {
 
     @Override
     public void onError(CameraDevice camera, int error) {
-        cameraOpenCloseLock.release();
         Log.e("CameraStateCallback", "onError with code " + error);
         device = Optional.absent();
         camera.close();
