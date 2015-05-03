@@ -26,6 +26,7 @@ import com.google.zxing.FormatException;
 import com.google.zxing.NotFoundException;
 import com.google.zxing.PlanarYUVLuminanceSource;
 import com.google.zxing.Result;
+import com.google.zxing.ResultPoint;
 import com.google.zxing.common.HybridBinarizer;
 import com.google.zxing.qrcode.QRCodeReader;
 
@@ -305,27 +306,33 @@ public class MainActivity extends CardboardActivity implements CardboardView.Ste
 
     @Override
     public void onImageAvailable(ImageReader reader) {
-        //todo: create PlanarYUVLuminanceSource from Image.
-        //todo: to do this, get byte[] from image (google this shit).
-        //todo: then use QRCodeMultiReader to decode the image.
         Image image = reader.acquireLatestImage();
 
-        byte[] dataFromImage = ImageFoo.getDataFromImage(image);
-        PlanarYUVLuminanceSource planarYUVLuminanceSource = new PlanarYUVLuminanceSource(dataFromImage, image.getWidth(), image.getHeight(), 0, 0, image.getWidth(), image.getHeight(), false);
-        BinaryBitmap bitmap = new BinaryBitmap(new HybridBinarizer(planarYUVLuminanceSource));
+        if (image != null) {
+            byte[] dataFromImage = ImageFoo.getDataFromImage(image);
+            PlanarYUVLuminanceSource planarYUVLuminanceSource = new PlanarYUVLuminanceSource(dataFromImage, image.getWidth(), image.getHeight(), 0, 0, image.getWidth(), image.getHeight(), false);
+            BinaryBitmap bitmap = new BinaryBitmap(new HybridBinarizer(planarYUVLuminanceSource));
 
-        QRCodeReader qrCodeReader = new QRCodeReader();
-        try {
-            Result decode = qrCodeReader.decode(bitmap);
-            Log.d("QRCodeReader", decode.getText());
-        } catch (NotFoundException e) {
-            Log.d("QRCodeReader", "NotFoundException");
-        } catch (ChecksumException e) {
-            Log.d("QRCodeReader", "CheckSumException");
-        } catch (FormatException e) {
-            Log.d("QRCodeReader", "FormatException");
+            QRCodeReader qrCodeReader = new QRCodeReader();
+            try {
+                Result decode = qrCodeReader.decode(bitmap);
+                ResultPoint[] resultPoints = decode.getResultPoints();
+
+                String coordinate = "";
+
+                int i = 0;
+
+                for (ResultPoint resultPoint : resultPoints) {
+                    coordinate += String.format("[%d]: x %f, y %f; ", i++, resultPoint.getX(), resultPoint.getY());
+                }
+
+
+                Log.d("QRCodeReader", decode.getText() + " " + coordinate);
+            } catch (NotFoundException | ChecksumException | FormatException e) {
+//                Log.d("QRCodeReader", "NotFoundException");
+            }
+
+            image.close();
         }
-
-        image.close();
     }
 }
