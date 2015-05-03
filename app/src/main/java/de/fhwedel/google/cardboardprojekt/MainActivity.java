@@ -20,6 +20,14 @@ import com.google.vrtoolkit.cardboard.CardboardView;
 import com.google.vrtoolkit.cardboard.Eye;
 import com.google.vrtoolkit.cardboard.HeadTransform;
 import com.google.vrtoolkit.cardboard.Viewport;
+import com.google.zxing.BinaryBitmap;
+import com.google.zxing.ChecksumException;
+import com.google.zxing.FormatException;
+import com.google.zxing.NotFoundException;
+import com.google.zxing.PlanarYUVLuminanceSource;
+import com.google.zxing.Result;
+import com.google.zxing.common.HybridBinarizer;
+import com.google.zxing.qrcode.QRCodeReader;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -301,6 +309,23 @@ public class MainActivity extends CardboardActivity implements CardboardView.Ste
         //todo: to do this, get byte[] from image (google this shit).
         //todo: then use QRCodeMultiReader to decode the image.
         Image image = reader.acquireLatestImage();
+
+        byte[] dataFromImage = ImageFoo.getDataFromImage(image);
+        PlanarYUVLuminanceSource planarYUVLuminanceSource = new PlanarYUVLuminanceSource(dataFromImage, image.getWidth(), image.getHeight(), 0, 0, image.getWidth(), image.getHeight(), false);
+        BinaryBitmap bitmap = new BinaryBitmap(new HybridBinarizer(planarYUVLuminanceSource));
+
+        QRCodeReader qrCodeReader = new QRCodeReader();
+        try {
+            Result decode = qrCodeReader.decode(bitmap);
+            Log.d("QRCodeReader", decode.getText());
+        } catch (NotFoundException e) {
+            Log.d("QRCodeReader", "NotFoundException");
+        } catch (ChecksumException e) {
+            Log.d("QRCodeReader", "CheckSumException");
+        } catch (FormatException e) {
+            Log.d("QRCodeReader", "FormatException");
+        }
+
         image.close();
     }
 }
