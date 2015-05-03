@@ -7,6 +7,7 @@ import java.nio.ByteBuffer;
 public class ImageFoo {
 
     //todo: performance is very much lol.
+    // maybe concat the three buffers and then read out the big buffer at once?
     public static byte[] getDataFromImage(Image image) {
         Image.Plane[] planes = image.getPlanes();
         int height = image.getHeight();
