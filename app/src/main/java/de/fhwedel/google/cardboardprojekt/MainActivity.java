@@ -62,6 +62,7 @@ public class MainActivity extends CardboardActivity implements CardboardView.Ste
 
         // Associate a CardboardView.StereoRenderer with cardboardView.
         cardboardView = (CardboardView) findViewById(R.id.cardboard_view);
+        cardboardView.setEGLConfigChooser(8 , 8, 8, 8, 16, 0);
         cardboardView.setRenderer(this);
         // Associate the cardboardView with this activity.
         setCardboardView(cardboardView);
